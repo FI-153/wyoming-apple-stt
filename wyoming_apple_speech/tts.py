@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import sys
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional
 
@@ -236,7 +237,20 @@ class TtsWorker:
             header = await asyncio.wait_for(self._read_header(), timeout=timeout)
         except (asyncio.TimeoutError, TtsWorkerError) as exc:
             await self.stop()
-            raise TtsWorkerError(f"worker did not become ready: {exc}") from exc
+            message = f"worker did not become ready: {exc}"
+            if not isinstance(exc, asyncio.TimeoutError):
+                # The worker's output pipe broke, i.e. the process died at
+                # startup — the signature of the Python binary lacking Full
+                # Disk Access (Siri voices load a TCC-protected model cache).
+                message += (
+                    " — a TTS worker dying at startup usually means the Python"
+                    f" running this server ({sys.executable}) lacks Full Disk"
+                    " Access. Grant it in System Settings → Privacy & Security"
+                    " → Full Disk Access and restart the service; re-grant"
+                    " after every Python upgrade (the path changes). See the"
+                    " README's TTS section."
+                )
+            raise TtsWorkerError(message) from exc
 
         if header.get("type") != "ready":
             await self.stop()
