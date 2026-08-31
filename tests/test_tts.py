@@ -3,6 +3,7 @@
 import asyncio
 import json
 import stat
+import sys
 
 import pytest
 
@@ -209,6 +210,19 @@ async def test_worker_start_failure_raises():
     failing = TtsWorker("/nonexistent/apple-tts")
     with pytest.raises(TtsWorkerError):
         await failing.start(timeout=5)
+
+
+async def test_worker_immediate_death_hints_full_disk_access(tmp_path):
+    """A worker dying before its ready line is the Full Disk Access signature:
+    the error must name the fix and the exact Python binary to grant."""
+    path = tmp_path / "dying-apple-tts"
+    path.write_text("#!/bin/sh\nexit 1\n")
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+
+    worker = TtsWorker(str(path))
+    with pytest.raises(TtsWorkerError, match="Full Disk Access") as excinfo:
+        await worker.start(timeout=10)
+    assert sys.executable in str(excinfo.value)
 
 
 # --- TtsWorkerPool ---
